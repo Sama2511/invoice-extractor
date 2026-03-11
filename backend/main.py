@@ -6,6 +6,8 @@ from supabase import create_client, Client
 import os
 from pydantic import BaseModel, ConfigDict
 from ocr import extract_TEXT_from_pdf
+from extractor import convert_text_to_json_Ai
+
 
 load_dotenv()
 
@@ -42,6 +44,7 @@ async def addCompany(company :Company ):
 
 @app.post("/uploadPdf")
 async def uploadPDF(file: UploadFile):
+
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail='File must be a PDF')
     pdf = await file.read()
@@ -49,10 +52,15 @@ async def uploadPDF(file: UploadFile):
         result = extract_TEXT_from_pdf(pdf)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception :
         raise HTTPException(status_code=500, detail="Something went wrong")
-
-    return {'text':result}
+    try:
+        invoices = convert_text_to_json_Ai(result)
+    except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail='Something went wrong')
+    return {'text':invoices}
 
 
 

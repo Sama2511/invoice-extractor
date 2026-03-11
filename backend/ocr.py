@@ -2,7 +2,8 @@ import pymupdf
 import pytesseract
 from PIL import Image
 import io
-from fastapi import HTTPException
+from dotenv import load_dotenv
+load_dotenv()
 
 def extract_TEXT_from_pdf(pdf):
     try:
