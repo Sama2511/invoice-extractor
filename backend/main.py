@@ -7,6 +7,7 @@ import os
 from pydantic import BaseModel, ConfigDict
 from ocr import extract_TEXT_from_pdf
 from extractor import convert_text_to_json_Ai
+from typing import Optional
 
 
 load_dotenv()
@@ -21,24 +22,32 @@ app.add_middleware(
 
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-
-@app.get('/companies')
-def read_root():
-    result = supabase.table('company').select('*').execute()
-    return{'companies':result.data}
-
 class Company(BaseModel):
     name: str
     tax_number: str
     address: str
-    
+
+@app.get('/companies')
+async def getCompanies():
+    try:
+        result = supabase.table('company').select('*').execute()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Something went wrong")
+    return {'companies': result.data}
+
+
 @app.post('/add-company/')
-async def addCompany(company :Company ):
-    data =  supabase.table('company').insert({
-        "name": company.name,
-        'tax_number':company.tax_number,
-        'address': company.address
-    }).execute()
+async def addCompany(company: Company):
+    try:
+        data = supabase.table('company').insert({
+            "name": company.name,
+            'tax_number': company.tax_number,
+            'address': company.address
+        }).execute()
+    except Exception as e:
+        if '23505' in str(e):
+            raise HTTPException(status_code=400, detail="Company already exists")
+        raise HTTPException(status_code=500, detail="Something went wrong")
     return data.data
 
 
@@ -99,14 +108,18 @@ async def confirmation(dataInvoice : FullInvoice):
                 "amount_ttc": invoice.amount_ttc 
             })
         data = supabase.table('invoices').insert(records).execute()
+        if not data.data:
+            raise HTTPException(status_code=500, detail="Failed to save invoices")
     except HTTPException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail="Not only information were provided")
     except TypeError as e:
         raise HTTPException(status_code=400, detail='Enter the right information')
-    except Exception:
-        raise HTTPException(status_code=500 , detail='Something went wrong')
+    except Exception as e:
+        if '23505' in str(e):
+            raise HTTPException(status_code=400, detail='Invoice already exists')
+        raise HTTPException(status_code=500 , detail="Something went wrong")
     
 
     return data.data
@@ -114,4 +127,115 @@ async def confirmation(dataInvoice : FullInvoice):
 
 
 
+@app.get("/company/{id}")
+async def getCompany(id:str):
+    try:
+        data = supabase.table('company').select("*").eq("id", id).execute()
+        if not data.data:
+            raise HTTPException(status_code=404, detail='Company not found')
+    except HTTPException:
+        raise   
+    except Exception:
+        raise HTTPException(status_code=500 , detail="Something went wrong")     
+    return {'company': data.data}
 
+@app.get("/invoice/{id}")
+async def getInvoice(id: str):
+    try:
+        data = supabase.table('invoices').select('*').eq('id', id).execute()
+        if not data.data:
+            raise HTTPException(status_code=404, detail='Invoice not found')
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Something went wrong")
+    return {'invoice': data.data}
+
+@app.get("/invoices/{company_id}")
+async def getInvoices(company_id :str):
+    try:
+        data = supabase.table('invoices').select('*').eq('company_id',company_id).execute()
+        if not data.data:
+                raise HTTPException(status_code=404, detail='Invoice not found')
+    except HTTPException:
+        raise 
+    except Exception:
+        raise HTTPException(status_code=500 , detail="Something went wrong")
+ 
+    return {"invoice": data.data}
+
+
+@app.delete('/company/{id}')
+async def deleteCompany(id:str):
+    try:
+        data = supabase.table('company').delete().eq("id", id).execute()
+        if not data.data:
+            raise HTTPException(status_code=404, detail='Company not found')
+    except HTTPException:
+        raise  
+    except Exception:
+        raise HTTPException(status_code=500 , detail="Something went wrong")
+    return {'company': data.data}
+
+
+@app.delete('/invoice/{id}')
+async def deleteInvoice(id :str):
+    try:
+        data = supabase.table('invoices').delete().eq('id',id).execute()
+        if not data.data:
+                raise HTTPException(status_code=404, detail='Invoice not found')
+    except HTTPException:
+        raise 
+    except Exception:
+        raise HTTPException(status_code=500 , detail="Something went wrong")
+    return {"invoice": data.data}
+
+
+
+class CompanyUpdate(BaseModel):
+    name: Optional[str] = None
+    tax_number: Optional[str] = None
+    address: Optional[str] = None
+
+@app.patch("/company/{id}")
+async def editCompany(id: str, details: CompanyUpdate):
+    try:
+        updates = {}
+        for k, v in details.model_dump().items():
+            if v is not None:
+                updates[k] = v
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields provided to update")
+        data = supabase.table('company').update(updates).eq('id', id).execute()
+        if not data.data:
+            raise HTTPException(status_code=404, detail="Company not found")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Something went wrong")
+    return data.data
+
+class InvoiceUpdate(BaseModel):
+    invoice_number: Optional[str] = None
+    date: Optional[str] = None
+    amount_ht: Optional[float] = None
+    vat: Optional[float] = None
+    amount_ttc: Optional[float] = None
+
+@app.patch("/invoice/{id}")
+async def editInvoice(id: str, details: InvoiceUpdate):
+    try:
+        updates = {}
+        for k, v in details.model_dump().items():
+            if v is not None:
+                updates[k] = v
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields provided to update")
+        data = supabase.table('invoices').update(updates).eq('id', id).execute()
+        if not data.data:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Something went wrong")
+    return data.data
